@@ -1,0 +1,23 @@
+{
+  "campaign_id": "REPLACE_WITH_A_REAL_CAMPAIGN_UUID",
+  "cases": [
+    {
+      "id": "strong-1",
+      "name": "REPLACE — a prospect you know is a genuinely good fit",
+      "institution": "REPLACE",
+      "expect": { "min_score": 7, "must_not_contain": ["leverage", "cutting-edge", "hope this finds you well"] }
+    },
+    {
+      "id": "weak-1",
+      "name": "REPLACE — a prospect you know is a bad fit",
+      "institution": "REPLACE",
+      "expect": { "max_score": 4 }
+    },
+    {
+      "id": "nonexistent-1",
+      "name": "Aylmer Quathwaite-Fennimore",
+      "institution": "Nonexistent Institute of Technology",
+      "expect": { "max_score": 3 }
+    }
+  ]
+}
