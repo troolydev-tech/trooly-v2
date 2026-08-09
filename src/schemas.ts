@@ -75,11 +75,16 @@ export type RelevanceScore = z.infer<typeof RelevanceScore>;
 // ---------- Email ----------
 
 export const GeneratedEmail = z.object({
-  subject: z.string().max(90),
-  body: z.string(),
+  subject: z.string().min(5).max(90).refine((s) => s.toLowerCase() !== 'null', {
+    message: 'subject cannot be the literal string "null"',
+  }),
+  body: z.string().min(30).refine((s) => s.toLowerCase() !== 'null', {
+    message: 'body cannot be the literal string "null"',
+  }),
   /** Every factual claim in the body, so the quality gate can check each one. */
   claims_made: z.array(z.string()),
 });
+
 export type GeneratedEmail = z.infer<typeof GeneratedEmail>;
 
 export const QualityVerdict = z.object({
