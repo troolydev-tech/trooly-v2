@@ -27,7 +27,7 @@ function reconstructAbstract(index: Record<string, number[]> | null | undefined)
   return text.length > 0 ? text : null;
 }
 
-// ── Serper: Google search ──────────────────────────────────────────────────
+// ── Google search via SerpAPI ─────────────────────────────────────────────
 
 async function googleSearch(query: string, limit = 5): Promise<{ link: string; snippet: string }[]> {
   if (!config.serperKey) return [];
@@ -43,24 +43,19 @@ async function googleSearch(query: string, limit = 5): Promise<{ link: string; s
   return (data.organic_results ?? []).map((o) => ({ link: o.link, snippet: o.snippet ?? '' }));
 }
 
-// ── Profile page finder ────────────────────────────────────────────────────
+// ── Profile page discovery ────────────────────────────────────────────────
+// No hardcoded domain whitelist. We trust Google's ranking, skip obvious noise,
+// then use content signals to pick the page most likely to be the right person.
 
-const TRUSTED_PROFILE_DOMAINS = [
-  'scholar.google',
-  'researchgate.net',
-  'academia.edu',
-  'ncl.res.in',
-  'irins.org',
-  'vidwan.inflibnet.ac.in',
-  'iitb.ac.in',
-  'iitd.ac.in',
-  'iitm.ac.in',
-  'iisc.ac.in',
-  'bits-pilani.ac.in',
+const NOISE_DOMAINS = [
+  'twitter.com', 'x.com', 'facebook.com', 'instagram.com',
+  'youtube.com', 'youtu.be',
+  'reddit.com', 'quora.com',
+  'pinterest.com', 'tumblr.com',
 ];
 
-function isProfilePage(url: string): boolean {
-  return TRUSTED_PROFILE_DOMAINS.some((d) => url.includes(d));
+function isNoise(url: string): boolean {
+  return NOISE_DOMAINS.some((d) => url.includes(d));
 }
 
 export type AuthorMatch = {
@@ -74,29 +69,57 @@ export type AuthorMatch = {
 };
 
 /**
- * Step 1: Google the person to find their real profile page.
- * Step 2: Try OpenAlex for structured publication data.
- * Step 3: Return whatever we found — even if OpenAlex has nothing,
- *         the profile page text is still valuable for the research step.
+ * Step 1: Google the person, read the top few results, pick the one whose content
+ *         most clearly matches them (their name + institution + evidence of a profile).
+ * Step 2: Try OpenAlex for structured publication data as a bonus.
+ * Step 3: Return whatever we found. Profile page text alone is valuable if OA has nothing.
  */
 export async function resolveAuthor(name: string, institution: string): Promise<AuthorMatch | null> {
   let profileUrl: string | null = null;
   let profileText: string | null = null;
 
-  // Google them first
+  // Google them
   const results = await googleSearch(
     `"${name}" ${institution} research publications`,
     8,
   ).catch(() => []);
 
-  // Find the best profile page from results
-  const profileHit = results.find((r) => isProfilePage(r.link));
-  if (profileHit) {
-    profileUrl = profileHit.link;
-    profileText = await readUrl(profileHit.link).catch(() => null);
+  // Read the top few non-noise results in parallel
+  const candidates = results.filter((r) => !isNoise(r.link)).slice(0, 3);
+
+  const scraped = await Promise.all(
+    candidates.map(async (c) => {
+      const text = await readUrl(c.link).catch(() => null);
+      return text && text.length > 500 ? { url: c.link, text } : null;
+    }),
+  );
+
+  // Score each scraped page by content match: does it mention their name AND
+  // institution, and does it look like a profile / publication page?
+  const nameParts = name.toLowerCase().split(/\s+/).filter((p) => p.length > 2);
+  const instFirstWord = institution.toLowerCase().split(/\s+/)[0] ?? '';
+
+  let bestPage: { url: string; text: string } | null = null;
+  let bestScore = 0;
+  for (const page of scraped) {
+    if (!page) continue;
+    const t = page.text.toLowerCase();
+    const nameHits = nameParts.filter((p) => t.includes(p)).length;
+    const instHit = instFirstWord && t.includes(instFirstWord) ? 1 : 0;
+    const profileSignal = /publication|paper|research|author|professor|faculty|scholar/.test(t) ? 1 : 0;
+    const score = nameHits * 2 + instHit + profileSignal;
+    if (score > bestScore) {
+      bestScore = score;
+      bestPage = page;
+    }
   }
 
-  // Also try OpenAlex in parallel
+  if (bestPage && bestScore >= 3) {
+    profileUrl = bestPage.url;
+    profileText = bestPage.text;
+  }
+
+  // Try OpenAlex in parallel for structured publication data
   type OAAuthor = {
     id: string;
     display_name: string;
@@ -110,7 +133,6 @@ export async function resolveAuthor(name: string, institution: string): Promise<
     `/authors?search=${encodeURIComponent(name)}&per-page=10`,
   ).catch(() => ({ results: [] }));
 
-  // Score OpenAlex results by institution overlap
   function overlap(a: string, b: string): number {
     const norm = (s: string) =>
       new Set(
@@ -124,7 +146,7 @@ export async function resolveAuthor(name: string, institution: string): Promise<
     return hits / Math.min(A.size, B.size);
   }
 
-  const scored = (oaData.results ?? []).map((a) => {
+  const scoredOA = (oaData.results ?? []).map((a) => {
     const insts: string[] = [];
     if (a.last_known_institutions) insts.push(...a.last_known_institutions.map((i) => i.display_name));
     if (a.last_known_institution) insts.push(a.last_known_institution.display_name);
@@ -140,14 +162,14 @@ export async function resolveAuthor(name: string, institution: string): Promise<
     };
   });
 
-  scored.sort((x, y) =>
+  scoredOA.sort((x, y) =>
     y.institutionConfidence - x.institutionConfidence || y.worksCount - x.worksCount,
   );
 
-  const top = scored[0];
+  const top = scoredOA[0];
   const hasOA = top && top.institutionConfidence >= 0.25;
 
-  // Return something as long as we found either a profile page or an OA record
+  // Return null only if we found nothing on either path
   if (!profileUrl && !hasOA) return null;
 
   return {
@@ -161,7 +183,7 @@ export async function resolveAuthor(name: string, institution: string): Promise<
   };
 }
 
-// ── Publications from OpenAlex ─────────────────────────────────────────────
+// ── Publications from OpenAlex ────────────────────────────────────────────
 
 type OAWork = {
   title: string | null;
@@ -184,11 +206,21 @@ export async function recentWorks(
       `&sort=publication_date:desc&per-page=${limit}`,
   );
 
-  return (data.results ?? []).map((w) => ({
-    title: w.title ?? w.display_name ?? 'Untitled',
-    year: w.publication_year,
-    venue: w.primary_location?.source?.display_name ?? null,
-    abstract: reconstructAbstract(w.abstract_inverted_index),
-    url: w.doi,
-  }));
+  return (data.results ?? []).map((w) => {
+    const title = w.title ?? w.display_name ?? 'Untitled';
+    const year = w.publication_year;
+    const venue = w.primary_location?.source?.display_name ?? 'OpenAlex';
+    const source_url = w.doi ? `https://doi.org/${w.doi.replace(/^https?:\/\//, '').replace(/^doi:\/?/, '')}` : `https://openalex.org/${openalexId}`;
+    const source_quote = `${title} (${year ?? 'n.d.'}), ${venue}`.trim();
+
+    return {
+      title,
+      year,
+      venue: w.primary_location?.source?.display_name ?? null,
+      abstract: reconstructAbstract(w.abstract_inverted_index),
+      url: w.doi,
+      source_url,
+      source_quote,
+    };
+  });
 }

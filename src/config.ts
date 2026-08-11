@@ -15,14 +15,11 @@ export const config = {
   port: Number(process.env.PORT ?? 3000),
 };
 
-/**
- * Model choices live in ONE place so you can swap them without hunting through prompts.
- * Haiku  = filtering, extraction, scoring, validation. Cheap and fast.
- * Sonnet = the final email. This is the only place quality is worth paying for.
- */
 export const MODELS = {
-  cheap: 'claude-haiku-4-5-20251001',
-  writer: 'claude-sonnet-5',
+  extractor: 'claude-haiku-4-5-20251001',  // fast structured extraction
+  scorer: 'claude-sonnet-5',                // judgment
+  writer: 'claude-sonnet-5',                // email writing
+  gate: 'claude-sonnet-5',                  // quality gate
 } as const;
 
 /** USD per million tokens. Used for per-prospect cost logging. */
