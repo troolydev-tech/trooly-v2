@@ -59,6 +59,7 @@ export async function structured<T extends z.ZodTypeAny>(opts: {
     const res = await client.messages.create({
       model,
       max_tokens: maxTokens,
+    
       system,
       messages: [{ role: 'user', content: userContent }],
       tools: [{

@@ -7,16 +7,27 @@ import { lookupDirectory } from '../sources/directory.js';
 import { findLiveSignals } from '../sources/liveSignals.js';
 import { ResearchBundle, type ProspectInput } from '../schemas.js';
 
+/**
+ * Extractor output — every extracted fact carries its own source_url and
+ * source_quote. Nothing gets into the ResearchBundle without a receipt.
+ */
+const Sourced = z.object({
+  value: z.string(),
+  source_url: z.string(),
+  source_quote: z.string().min(5),
+});
+
 const ExtractedSignals = z.object({
   department: z.string().nullable(),
-  research_focus: z.string().nullable(),
-  equipment_mentioned: z.array(z.string()),
+  research_focus: Sourced.nullable(),
+  equipment_mentioned: z.array(Sourced),
   projects: z.array(
     z.object({
       description: z.string(),
-      evidence_url: z.string().nullable(),
       signal_type: z.enum(['recruitment_ad', 'grant', 'tender', 'news', 'thesis']),
       dated: z.string().nullable(),
+      source_url: z.string(),
+      source_quote: z.string().min(5),
     }),
   ),
   publications_found: z.array(
@@ -24,6 +35,8 @@ const ExtractedSignals = z.object({
       title: z.string(),
       year: z.number().nullable(),
       venue: z.string().nullable(),
+      source_url: z.string(),
+      source_quote: z.string().min(5),
     }),
   ),
 });
@@ -41,11 +54,17 @@ export async function research(
     return null;
   });
 
-  // Step 2: Get structured publications from OpenAlex if we have an ID
+  // Step 2: Get structured publications from OpenAlex if we have an ID.
+  // OpenAlex publications get openalex.org as their source URL.
   let publications: ResearchBundle['publications'] = [];
   if (author?.openalexId) {
     sourcesUsed.push('openalex');
-    publications = await recentWorks(author.openalexId).catch(() => []);
+    const rawPubs = await recentWorks(author.openalexId).catch(() => []);
+    publications = rawPubs.map((p) => ({
+      ...p,
+      source_url: p.url ?? `https://openalex.org/${author.openalexId}`,
+      source_quote: `${p.title}${p.year ? ` (${p.year})` : ''}${p.venue ? `, ${p.venue}` : ''}`,
+    }));
   }
 
   // Step 3: Institutional directory
@@ -56,10 +75,10 @@ export async function research(
   const signals = await findLiveSignals(prospect.name, prospect.institution).catch(() => []);
   if (signals.length) sourcesUsed.push('live_signals');
 
-  // Step 5: If we found a profile page, that's a source too
+  // Step 5: Profile page from Google
   if (author?.profileUrl) sourcesUsed.push('profile_page');
 
-  // Step 6: One Haiku call to extract structured facts from ALL raw text sources
+  // Step 6: One extraction call to pull structured, sourced facts from all raw text.
   let extracted: z.infer<typeof ExtractedSignals> = {
     department: null,
     research_focus: null,
@@ -70,34 +89,47 @@ export async function research(
 
   const rawText = [
     author?.profileText
-      ? `SOURCE: ${author.profileUrl}\n${author.profileText.slice(0, 10000)}`
+      ? `SOURCE_URL: ${author.profileUrl}\nCONTENT:\n${author.profileText.slice(0, 10000)}`
       : '',
     dir
-      ? `SOURCE: ${dir.url}\n${dir.text.slice(0, 8000)}`
+      ? `SOURCE_URL: ${dir.url}\nCONTENT:\n${dir.text.slice(0, 8000)}`
       : '',
     ...signals.map(
-      (sig) => `SOURCE: ${sig.url}\n${sig.snippet}\n${(sig.text ?? '').slice(0, 6000)}`,
+      (sig) => `SOURCE_URL: ${sig.url}\nCONTENT:\n${sig.snippet}\n${(sig.text ?? '').slice(0, 6000)}`,
     ),
   ].filter(Boolean).join('\n\n---\n\n');
 
   if (rawText.length > 200) {
     extracted = await structured({
-      model: MODELS.cheap,
+      model: MODELS.extractor,
       schemaName: 'submit_extracted_signals',
-      schemaDescription: 'Structured facts extracted from source documents about this researcher.',
+      schemaDescription: 'Sourced facts extracted verbatim from source documents.',
       schema: ExtractedSignals,
       meter,
       system:
-        'You extract facts from source documents about a researcher. ' +
-        'You never infer, guess, or add information not written in the text. ' +
-        'If a field is not stated in the sources, return null or an empty array. ' +
-        'For publications_found, extract any paper titles and years you can see in the sources. ' +
-        'For equipment_mentioned, list any lab equipment, instruments, or machines named. ' +
-        'For research_focus, write one sentence summarising their main research area based only on what you read.',
+        'You extract facts about a researcher from source documents.\n\n' +
+        'CRITICAL GROUNDING RULE\n' +
+        'Every fact you output must include:\n' +
+        '  - source_url: the SOURCE_URL of the document where you found the fact\n' +
+        '  - source_quote: a verbatim snippet (5-200 words) from that source that supports ' +
+        '    the fact. This must be a direct copy from the source, not paraphrased.\n\n' +
+        'If you cannot find a verbatim supporting quote in any source, you MUST NOT include ' +
+        'that fact. Return an empty array or null for that field instead.\n\n' +
+        'DO NOT infer, guess, or extend a source. If the source mentions "3D printing" you may ' +
+        'not claim "filament development" unless the word "filament" or a clear synonym is in ' +
+        'the actual quote you cite.\n\n' +
+        'EXTRACTION GUIDANCE\n' +
+        '- department: their department, in the sources or null if not stated\n' +
+        '- research_focus: one sentence, sourced. Only claim what the source quote actually says.\n' +
+        '- equipment_mentioned: instruments/lab equipment named in the sources — each sourced\n' +
+        '- projects: active or recently funded projects — each sourced. A project counts as ' +
+        '  active only if the source says it is ongoing, recruiting, funded, or dated within ' +
+        '  the last 2 years.\n' +
+        '- publications_found: paper titles and years visible in the sources — each sourced',
       prompt:
         `Person: ${prospect.name}\n` +
         `Institution: ${prospect.institution}\n\n` +
-        `Extract structured facts about this person from the sources below.\n\n` +
+        `Extract structured, sourced facts. Every fact must include source_url + verbatim source_quote.\n\n` +
         `SOURCES:\n${rawText}`,
     }).catch((e) => {
       log('warn', 'extract_failed', { error: String(e) });
@@ -112,9 +144,10 @@ export async function research(
     venue: p.venue,
     abstract: null,
     url: null,
+    source_url: p.source_url,
+    source_quote: p.source_quote,
   }));
 
-  // OpenAlex pubs take priority; add scraped ones that aren't already there
   const allTitles = new Set(publications.map((p) => p.title.toLowerCase()));
   for (const p of scrapedPubs) {
     if (!allTitles.has(p.title.toLowerCase())) publications.push(p);
@@ -134,6 +167,7 @@ export async function research(
         ? 'low'
         : 'none',
     },
+    research_focus: extracted.research_focus,
     publications,
     live_projects: extracted.projects,
     sources_used: sourcesUsed,
@@ -143,8 +177,8 @@ export async function research(
     sources: sourcesUsed.length,
     pubs: publications.length,
     projects: extracted.projects.length,
-    research_focus: extracted.research_focus,
-    equipment: extracted.equipment_mentioned,
+    research_focus: extracted.research_focus?.value ?? null,
+    equipment_count: extracted.equipment_mentioned.length,
   });
 
   return bundle;

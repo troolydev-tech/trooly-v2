@@ -10,9 +10,26 @@ async function persistResult(
   const { error: pErr } = await db
     .from('prospects')
     .update({
+<<<<<<< HEAD
+=======
+      intelligence: bundle,
+      intelligence_sourced: bundle,
+>>>>>>> 764164e (Add sourced grounding: companies, products, research. Sonnet extraction + quality gate. Concurrency 8.)
       last_researched_at: new Date().toISOString(),
     })
     .eq('id', prospect.prospect_id);
+
+  const { error: cpErr } = await db
+    .from('campaign_prospects')
+    .update({
+      status: result.status,
+      relevance_score: scored.overall,
+      hook: scored.hook,
+    })
+    .eq('campaign_id', ctx.campaignId)
+    .eq('prospect_id', prospect.prospect_id);
+
+  if (cpErr) log('error', 'db.campaign_prospect_update_failed', { error: cpErr.message });
 
   if (pErr) log('error', 'db.prospect_update_failed', { error: pErr.message });
 
@@ -44,7 +61,7 @@ async function persistResult(
 export async function runBatch(
   prospects: ProspectInput[],
   campaignId: string,
-  concurrency = 4,
+  concurrency = 8,
 ): Promise<RunResult[]> {
   // Ensure prospect rows exist in `prospects`, and linking rows exist in `campaign_prospects`.
   try {
