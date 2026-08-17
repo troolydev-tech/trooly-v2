@@ -1,11 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { ChangeEvent } from 'react';
-import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY,
-);
+import { supabase } from './lib/supabase';
 
 type Sourced = { value: string; source_url: string; source_quote: string };
 

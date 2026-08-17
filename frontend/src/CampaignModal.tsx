@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY,
-);
-
+import { supabase } from './lib/supabase';
 const COST_PER_PROSPECT_USD = 0.022;
 
 type Product = { id: string; name: string; company_id: string };

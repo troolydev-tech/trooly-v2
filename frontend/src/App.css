@@ -641,3 +641,72 @@ select {
 .source-tip a:hover {
   text-decoration: underline;
 }
+/* Login page */
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at top, rgba(139, 92, 246, 0.15), transparent 50%), #0a0f1e;
+  padding: 2rem;
+}
+.login-card {
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 3rem 2.5rem;
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+.login-card .eyebrow {
+  color: #8b5cf6;
+  font-size: 0.8rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+.login-card h1 {
+  font-size: 1.6rem;
+  margin: 0 0 0.5rem;
+  color: #fff;
+}
+.login-sub {
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0 0 2rem;
+  font-size: 0.95rem;
+}
+.google-btn {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  background: #fff;
+  color: #1f2937;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s;
+}
+.google-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.login-fine-print {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.75rem;
+  margin-top: 1.5rem;
+}
+.top-nav-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+.user-email {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+}
