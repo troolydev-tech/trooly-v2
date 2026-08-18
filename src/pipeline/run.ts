@@ -66,7 +66,7 @@ export type RunResult = {
   error?: string;
 };
 
-async function runProspect(
+export async function runProspect(
   prospect: ProspectInput,
   ctx: CampaignContext,
 ): Promise<RunResult> {
@@ -93,7 +93,7 @@ async function runProspect(
 
     // Write + quality-gate the email
     const draft = await writeEmail(ctx, bundle, scored, meter);
-    const gate = await qualityGate(ctx, draft, bundle, meter);
+    const gate = await qualityGate(draft, bundle, meter);
     const subject = gate.rewritten_subject ?? draft.subject;
     const body = gate.rewritten_body ?? draft.body;
 

@@ -49,12 +49,18 @@ export async function loadCampaignContext(campaignId: string): Promise<CampaignC
       productName: 'Your Product',
       productDescription: 'A quality product or service',
       productCapabilities: 'Delivers value to customers',
+      productUseCases: 'Helps with common use cases',
+      productTechnicalSpecs: 'Built with modern technology',
       sellerCompany: 'Trooly',
       sellerSummary: 'We help organizations find talent',
       senderName: 'Sender',
       senderTitle: 'Hiring Manager',
-      emailLength: 'standard',
-      emailTone: 'professional',
+      emailLength: 'medium',
+      emailTone: 'formal',
+      callToAction: 'Let us help you find talent',
+      campaignGoal: 'Reach qualified candidates',
+      additionalInstructions: '',
+      objective: '',
     };
   }
 
